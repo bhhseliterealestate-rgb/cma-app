@@ -842,7 +842,7 @@ Then fetch the matching page.
 Return ONLY valid JSON:
 {"address":"street only","city":"","state":"UT","zip":"","beds":"","baths":"","sqft":"livable sqft number string","yearBuilt":"","lotSize":"sqft convert acres to sqft","garage":"","pool":false,"condition":"Good","zestimate":"number string no commas","listPrice":"active price string or empty","zillowUrl":"url used","found":true or false,"note":"listing status"}`;
 
-  const res = await fetch("/api/claude",{
+  const res = await fetch("https://api.anthropic.com/v1/messages",{
     method:"POST",headers:{"Content-Type":"application/json"},
     body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:2000,
       tools:[{type:"web_search_20250305",name:"web_search"}],
@@ -877,7 +877,7 @@ Return ONLY valid JSON:
 
 Rules: 4-6 comps, size within 40% of ${sqft} sqft, dates between ${yearAgo} and ${today}, anchor pricing context to zestimate of ${zest}`;
 
-  const compsRes = await fetch("/api/claude",{
+  const compsRes = await fetch("https://api.anthropic.com/v1/messages",{
     method:"POST",headers:{"Content-Type":"application/json"},
     body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:4000,
       tools:[{type:"web_search_20250305",name:"web_search"}],
@@ -937,7 +937,7 @@ ${isAiComps?`=== DATA DISCLAIMER ===\nComps sourced from public listing data. Ut
 
 Be specific. Use dollar amounts. Professional but readable.`;
 
-  const res = await fetch("/api/claude",{
+  const res = await fetch("https://api.anthropic.com/v1/messages",{
     method:"POST",headers:{"Content-Type":"application/json"},
     body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:3000,messages:[{role:"user",content:prompt}]})
   });
@@ -951,7 +951,7 @@ async function fetchMLS(mlsNum) {
 Find the exact listing and extract property details.
 Return ONLY valid JSON: {"address":"street only","city":"","state":"UT","zip":"","beds":"","baths":"","sqft":"sqft string","yearBuilt":"","lotSize":"sqft string","garage":"","pool":false,"condition":"Good","listPrice":"price string","found":true or false,"source":"site used","note":""}`;
 
-  const res = await fetch("/api/claude",{
+  const res = await fetch("https://api.anthropic.com/v1/messages",{
     method:"POST",headers:{"Content-Type":"application/json"},
     body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1500,
       tools:[{type:"web_search_20250305",name:"web_search"}],
@@ -1062,42 +1062,64 @@ ${vc.map(c=>{const sp=parseFloat(String(c.salePrice).replace(/[^0-9.]/g,""))||0;
 
 /* ─── Parse MLS comps from uploaded PDF ─────────────────── */
 async function parsePDFComps(base64Data) {
-  const prompt = `This is an MLS comparable sales report PDF. Each listing is a separate property sold recently.
+  const prompt = `This is a UtahRealEstate.com MLS Agent Full Report PDF. It contains multiple property listings. Each listing starts with "MLS#" followed by a number.
 
-Extract EVERY individual property listing from this document. Each MLS listing has fields like:
-- MLS#, Sold Price, Address, City, Beds, Baths, Sq Ft, Year Built, Acres/Lot Size, Garage, Pool, DOM (Days on Market), Sold Date, Condition
+Extract EVERY listing. Do not skip any. This PDF format has these exact fields — read them carefully for each listing:
 
-Return ONLY valid JSON:
+- MLS#: the number after "MLS#" at the top of each listing
+- Sold Price: the dollar amount after "Sold Price:"
+- Original List Price: dollar amount after "Original List Price:"
+- DOM: number after "DOM:"
+- Sold Date: date after "Sold Date:"
+- Address: street address after "Address:"
+- City line: contains city, state, zip e.g. "American Fork, UT 84003"
+- Total Sq Ft: the "Tot" row in the square footage table — use the first number (total sqft)
+- Beds: from the "Tot" row, the Bed Rms column
+- Baths: from the "Tot" row — add Full (F) + Three-Quarter (T) baths, ignore Half (H)
+- Year Built: after "Year Built:"
+- Acres: after "Acres:" — convert to sqft by multiplying by 43560
+- Garage: the number after "Garage:" (number of stalls)
+- Pool?: "Yes" or "No" after "Pool?:"
+- Style: after "Style:"
+- Type: after "Type:"
+- Concessions: dollar amount after "Concessions:"
+- Sold Terms: after "Sold Terms:"
+
+Return ONLY valid JSON with no markdown or explanation:
 {
   "comps": [
     {
-      "address": "street address only",
-      "city": "city name",
+      "mlsNum": "MLS number as string",
+      "address": "street address only e.g. 1031 S 950 W",
+      "city": "city name only e.g. American Fork",
       "state": "UT",
-      "zip": "zip code",
-      "salePrice": "sold price number string no commas no dollar sign",
-      "saleDate": "YYYY-MM-DD format",
-      "beds": "number string",
-      "baths": "number string",
-      "sqft": "total sq ft number string no commas",
-      "lotSize": "lot size in sq ft — convert acres to sqft if needed (1 acre = 43560)",
-      "garage": "number of garage spaces as text e.g. 3-car attached",
+      "zip": "zip code e.g. 84003",
+      "salePrice": "sold price digits only no commas no dollar sign e.g. 775000",
+      "listPrice": "original list price digits only no commas e.g. 799999",
+      "saleDate": "YYYY-MM-DD",
+      "beds": "total beds as string e.g. 5",
+      "baths": "full + three-quarter baths as decimal e.g. 2 or 3.5",
+      "sqft": "total sqft from Tot row no commas e.g. 3550",
+      "lotSize": "acres converted to sqft rounded to nearest whole number e.g. 9148",
+      "garage": "garage stalls as text e.g. 3-car",
       "pool": false,
+      "daysOnMarket": "DOM as string e.g. 75",
+      "yearBuilt": "year as string e.g. 2022",
       "condition": "Average",
-      "daysOnMarket": "DOM number string",
-      "mlsNum": "MLS number",
-      "listPrice": "original list price string"
+      "style": "e.g. 2-Story",
+      "concessions": "concession amount digits only e.g. 5000",
+      "soldTerms": "e.g. Conventional"
     }
   ],
-  "count": total number of listings found
+  "count": total number of listings extracted
 }
 
-Extract ALL listings. Do not skip any. If a field is not present, use empty string. For condition, use Average unless notes indicate otherwise.`;
+IMPORTANT: Extract ALL listings. If this PDF has 5 listings, return 5 comps. If it has 10, return 10. Do not stop early.`;
 
   const res = await fetch("/api/claude", {
     method:"POST", headers:{"Content-Type":"application/json"},
     body: JSON.stringify({
-      model:"claude-sonnet-4-20250514", max_tokens:4000,
+      model:"claude-sonnet-4-20250514", max_tokens:6000,
       messages:[{
         role:"user",
         content:[
@@ -1114,17 +1136,9 @@ Extract ALL listings. Do not skip any. If a field is not present, use empty stri
 
 /* ─── Main App ───────────────────────────────────────────── */
 export default function App() {
-  const [mode,setMode]   = useState(null); // null | "ai" | "agent"
+  const [mode,setMode]   = useState("agent"); // always Full CMA
 
-  // Quick CMA (AVM) mode state
-  const [qAddr,setQAddr]     = useState("");
-  const [qLoading,setQL]     = useState(false);
-  const [qResult,setQResult] = useState(null); // {address, zestimate, realtorAvm, details, neighborhood, report}
-  const [qErr,setQErr]       = useState(null);
-
-  const resetQ = () => { setQAddr(""); setQResult(null); setQErr(null); };
-
-  // Agent Comps mode state
+  // Full CMA mode state
   const [agStep,setAgS]  = useState(0); // 0=lookup, 1=subject, 2=comps, 3=notes, 4=report
   const [agSub,setAgSub] = useState(emptySub);
   const [agComps,setAgComps] = useState([emptyComp(),emptyComp(),emptyComp()]);
@@ -1148,71 +1162,7 @@ export default function App() {
 
   const resetAg = () => { setAgS(0);setAgSub(emptySub);setAgComps([emptyComp(),emptyComp(),emptyComp()]);setAgNotes("");setAgR(null);setAgErr(null);setMlsNum("");setMlsSt(null); };
 
-  /* Quick CMA — fetch AVM values from Zillow + Realtor.com + neighborhood context */
-  const runQuickAVM = async () => {
-    if (!qAddr.trim()) return;
-    setQL(true); setQErr(null); setQResult(null);
-    try {
-      const prompt = `You are a real estate data analyst. Research this property: "${qAddr.trim()}"
-
-Steps:
-1. Search Zillow for this address — get the Zestimate and estimated value range
-2. Search Realtor.com for this address — get their home value estimate
-3. Look up current neighborhood/zip market data: median prices, price trends, avg DOM
-
-Return ONLY valid JSON (no markdown):
-{
-  "address": "full street address",
-  "city": "city",
-  "state": "UT",
-  "zip": "zip",
-  "beds": "number",
-  "baths": "number",
-  "sqft": "number no commas",
-  "yearBuilt": "year",
-  "lotSize": "as listed e.g. 0.21 acres or 9147 sqft",
-  "garage": "description",
-  "zestimate": "Zillow Zestimate as number string no commas",
-  "zestimateLow": "Zillow range low no commas",
-  "zestimateHigh": "Zillow range high no commas",
-  "realtorAvm": "Realtor.com estimate no commas",
-  "realtorAvmLow": "Realtor.com low range no commas",
-  "realtorAvmHigh": "Realtor.com high range no commas",
-  "lastSoldPrice": "last recorded sale price no commas or empty string",
-  "lastSoldDate": "YYYY-MM-DD or empty",
-  "neighborhood": {
-    "medianPrice": "current median home price in this area no commas",
-    "priceChange1yr": "percent change last 12 months e.g. +4.2 or -1.8",
-    "avgDom": "average days on market as number string",
-    "pricePerSqft": "median price per sqft no commas",
-    "marketTemp": "Hot | Warm | Neutral | Cool | Cold",
-    "inventory": "brief note on inventory levels",
-    "trend": "2 sentence description of current market trend for this neighborhood"
-  },
-  "avmConsensus": "average of Zillow and Realtor.com no commas",
-  "found": true,
-  "note": "any notes on data availability"
-}`;
-
-      const res = await fetch("/api/claude", {
-        method:"POST", headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({
-          model:"claude-sonnet-4-20250514", max_tokens:2000,
-          tools:[{type:"web_search_20250305",name:"web_search"}],
-          messages:[{role:"user",content:prompt}]
-        })
-      });
-      const data = await res.json();
-      const text = (data.content||[]).filter(b=>b.type==="text").map(b=>b.text).join("");
-      const result = parseJSON(text);
-      if (!result?.found) throw new Error(result?.note||"Property not found. Try a more complete address.");
-      setQResult(result);
-    } catch(e) {
-      setQErr("Could not retrieve data — "+e.message);
-    } finally { setQL(false); }
-  };
-
-  /* Agent Comps: MLS lookup */
+  /* Full CMA: MLS lookup */
   const doMlsLookup = async () => {
     setMlsLd(true); setMlsSt(null); setAgErr(null);
     try {
@@ -1252,246 +1202,22 @@ Return ONLY valid JSON (no markdown):
   const confBorder=c=>c==="high"?"#8FBF8F":c==="medium"?B.gold:"#E8CCCC";
   const confText=c=>c==="high"?"#1A4A1A":c==="medium"?"#7A5C2A":"#7A2020";
 
-  const Header = ({label,onBack}) => (
+  const Header = () => (
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"1.6rem",paddingBottom:"1rem",borderBottom:`1px solid ${B.border}`}}>
       <Logo/>
-      <div style={{display:"flex",alignItems:"center",gap:12}}>
-        <div style={{fontSize:11,color:B.muted,letterSpacing:".3px"}}>{label}</div>
-        <button className="cr-sm" onClick={onBack}>← Change Type</button>
-      </div>
-    </div>
-  );
-
-  /* ── MODE SELECTOR ── */
-  if (!mode) return (
-    <div className="cr" style={{maxWidth:740,margin:"0 auto",padding:"1.5rem 1rem",fontFamily:SANS}}>
-      <GS/>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"2rem",paddingBottom:"1rem",borderBottom:`1px solid ${B.border}`}}>
-        <Logo/>
-        <div style={{fontSize:11,color:B.muted}}>Berkshire Hathaway HomeServices Elite Real Estate</div>
-      </div>
-      <div style={{fontFamily:SERIF,fontSize:24,color:B.navy,marginBottom:6}}>Select Report Type</div>
-      <p style={{fontSize:13,color:B.muted,marginBottom:"1.8rem",lineHeight:1.6}}>Quick CMA pulls automated valuations instantly from public sources. Full CMA uses your verified MLS comps for a client-ready pricing report.</p>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
-
-        {/* Quick CMA */}
-        <div className="mode-card" onClick={()=>setMode("ai")} style={{borderColor:B.gold}}>
-          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
-            <div style={{width:38,height:38,borderRadius:6,background:B.goldPale,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-              <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-                <circle cx="10" cy="7" r="5" stroke={B.gold} strokeWidth="1.5"/>
-                <path d="M6 13c0-2.2 1.8-4 4-4s4 1.8 4 4" stroke={B.gold} strokeWidth="1.5" strokeLinecap="round"/>
-                <path d="M13 16h4M15 14v4" stroke={B.gold} strokeWidth="1.5" strokeLinecap="round"/>
-              </svg>
-            </div>
-            <div>
-              <div style={{fontFamily:SERIF,fontSize:16,color:B.navy,lineHeight:1.1}}>Quick CMA</div>
-              <div style={{fontSize:10,color:B.muted,marginTop:3,letterSpacing:".5px",textTransform:"uppercase"}}>Address only · instant</div>
-            </div>
-          </div>
-          <p style={{fontSize:12,color:B.textSoft,lineHeight:1.7,marginBottom:14}}>Drop in any address. Pulls the Zillow Zestimate, Realtor.com AVM, property details, and neighborhood market data in one shot — no forms to fill out.</p>
-          <div style={{fontSize:11,color:B.muted,marginBottom:14}}>
-            {["Zillow Zestimate + value range","Realtor.com AVM estimate","Neighborhood median, DOM, price trend","Market temperature indicator"].map(f=>(
-              <div key={f} style={{display:"flex",gap:7,alignItems:"flex-start",marginBottom:5}}>
-                <div style={{width:4,height:4,borderRadius:"50%",background:B.gold,flexShrink:0,marginTop:5}}/>
-                <span>{f}</span>
-              </div>
-            ))}
-          </div>
-          <button className="cr-gold" style={{width:"100%",padding:"11px",fontSize:13}}>Run Quick CMA →</button>
-        </div>
-
-        {/* Full CMA */}
-        <div className="mode-card" onClick={()=>setMode("agent")}>
-          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
-            <div style={{width:38,height:38,borderRadius:6,background:"#E8EDF2",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-              <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-                <rect x="3" y="4" width="14" height="2" rx="1" fill={B.navy}/>
-                <rect x="3" y="9" width="10" height="2" rx="1" fill={B.navy}/>
-                <rect x="3" y="14" width="12" height="2" rx="1" fill={B.navy}/>
-              </svg>
-            </div>
-            <div>
-              <div style={{fontFamily:SERIF,fontSize:16,color:B.navy,lineHeight:1.1}}>Full CMA</div>
-              <div style={{fontSize:10,color:B.muted,marginTop:3,letterSpacing:".5px",textTransform:"uppercase"}}>Your verified MLS comps</div>
-            </div>
-          </div>
-          <p style={{fontSize:12,color:B.textSoft,lineHeight:1.7,marginBottom:14}}>Enter your own verified MLS comparables for a fully client-ready listing presentation with pricing range, narrative, and branded PDF.</p>
-          <div style={{fontSize:11,color:B.muted,marginBottom:14}}>
-            {["MLS number lookup to autofill subject","3 to 7 agent-verified comps","Import comps from MLS PDF","Professional PDF report, no disclaimer"].map(f=>(
-              <div key={f} style={{display:"flex",gap:7,alignItems:"flex-start",marginBottom:5}}>
-                <div style={{width:4,height:4,borderRadius:"50%",background:B.navy,flexShrink:0,marginTop:5}}/>
-                <span>{f}</span>
-              </div>
-            ))}
-          </div>
-          <button className="cr-primary" style={{width:"100%",padding:"11px",fontSize:13}}>Start Full CMA →</button>
-        </div>
-      </div>
+      <div style={{fontSize:11,color:B.muted,letterSpacing:".3px"}}>Berkshire Hathaway HomeServices Elite Real Estate</div>
     </div>
   );
 
   /* ══════════════════════════════════════════════════
-     QUICK CMA — address → AVM snapshot report
-  ══════════════════════════════════════════════════ */
-  if (mode === "ai") {
-    const f = n => { const num = parseInt(String(n).replace(/[^0-9]/g,"")); return isNaN(num) ? "—" : "$"+num.toLocaleString(); };
-    const r = qResult;
-    const tempColor = t => ({Hot:"#E53935",Warm:"#FF6D00",Neutral:B.navy,Cool:"#1565C0",Cold:"#6A1B9A"})[t]||B.navy;
-    const tempBg = t => ({Hot:"#FFF3F3",Warm:"#FFF8F0",Neutral:B.cream,Cool:"#F0F5FF",Cold:"#F8F0FF"})[t]||B.cream;
-
-    return (
-      <div className="cr" style={{maxWidth:740,margin:"0 auto",padding:"1.5rem 1rem",fontFamily:SANS}}>
-        <GS/>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"1.6rem",paddingBottom:"1rem",borderBottom:`1px solid ${B.border}`}}>
-          <Logo/>
-          <div style={{display:"flex",alignItems:"center",gap:12}}>
-            <div style={{fontSize:11,color:B.muted}}>Quick CMA</div>
-            <button className="cr-sm" onClick={()=>{resetQ();setMode(null);}}>← Change Type</button>
-          </div>
-        </div>
-
-        <ErrBanner msg={qErr}/>
-
-        {qLoading ? <Spinner/> : r ? (
-          /* ── RESULT ── */
-          <div className="cr-fade">
-            <div style={{fontFamily:SERIF,fontSize:22,color:B.navy,marginBottom:4}}>{r.address||qAddr}</div>
-            <div style={{fontSize:13,color:B.muted,marginBottom:"1.4rem"}}>{[r.city,r.state,r.zip].filter(Boolean).join(", ")} · {r.beds}bd / {r.baths}ba · {r.sqft?Number(r.sqft).toLocaleString()+" sqft":""} · Built {r.yearBuilt}</div>
-
-            {/* AVM comparison — the key panel */}
-            <SHead label="Automated Valuations"/>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:16}}>
-              {/* Zillow */}
-              <div style={{background:B.cream,border:`2px solid #006AFF22`,borderRadius:8,padding:"14px 14px 12px"}}>
-                <div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:"1px",color:"#006AFF",marginBottom:6}}>Zillow Zestimate</div>
-                <div style={{fontFamily:SERIF,fontSize:22,color:B.navy,marginBottom:4}}>{f(r.zestimate)}</div>
-                {r.zestimateLow&&r.zestimateHigh&&<div style={{fontSize:11,color:B.muted}}>{f(r.zestimateLow)} – {f(r.zestimateHigh)}</div>}
-              </div>
-              {/* Realtor.com */}
-              <div style={{background:B.cream,border:`2px solid #D4311422`,borderRadius:8,padding:"14px 14px 12px"}}>
-                <div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:"1px",color:"#D43114",marginBottom:6}}>Realtor.com</div>
-                <div style={{fontFamily:SERIF,fontSize:22,color:B.navy,marginBottom:4}}>{f(r.realtorAvm)}</div>
-                {r.realtorAvmLow&&r.realtorAvmHigh&&<div style={{fontSize:11,color:B.muted}}>{f(r.realtorAvmLow)} – {f(r.realtorAvmHigh)}</div>}
-              </div>
-              {/* Consensus */}
-              <div style={{background:B.navy,border:"none",borderRadius:8,padding:"14px 14px 12px"}}>
-                <div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:"1px",color:B.gold,marginBottom:6}}>AVM Consensus</div>
-                <div style={{fontFamily:SERIF,fontSize:22,color:"#fff",marginBottom:4}}>{f(r.avmConsensus)}</div>
-                <div style={{fontSize:11,color:"rgba(255,255,255,0.5)"}}>Avg of both sources</div>
-              </div>
-            </div>
-
-            {/* Last sold */}
-            {r.lastSoldPrice&&(
-              <div style={{background:B.goldPale,border:`1px solid ${B.gold}`,borderRadius:6,padding:"10px 14px",marginBottom:14,fontSize:12,color:B.textSoft}}>
-                Last sold {r.lastSoldDate?`on ${new Date(r.lastSoldDate).toLocaleDateString("en-US",{year:"numeric",month:"long",day:"numeric"})} `:""} for <strong style={{color:B.navy}}>{f(r.lastSoldPrice)}</strong>
-                {r.lastSoldPrice&&r.avmConsensus&&(()=>{
-                  const gain = parseInt(String(r.avmConsensus).replace(/[^0-9]/g,"")) - parseInt(String(r.lastSoldPrice).replace(/[^0-9]/g,""));
-                  if (!isNaN(gain)&&gain!==0) return <span> · <strong style={{color:gain>0?"#2E7D32":"#C62828"}}>{gain>0?"+":""}{gain.toLocaleString()}</strong> since purchase</span>;
-                })()}
-              </div>
-            )}
-
-            {/* Neighborhood panel */}
-            {r.neighborhood&&(
-              <>
-                <SHead label="Neighborhood Market"/>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:12}}>
-                  {[
-                    {label:"Median Price",val:f(r.neighborhood.medianPrice)},
-                    {label:"Price / Sq Ft",val:r.neighborhood.pricePerSqft?"$"+r.neighborhood.pricePerSqft:"—"},
-                    {label:"Avg Days on Market",val:r.neighborhood.avgDom||(r.neighborhood.avgDom==="0"?"0":"—")},
-                  ].map(s=>(
-                    <div key={s.label} style={{background:B.cream,border:`1px solid ${B.border}`,borderRadius:6,padding:"12px"}}>
-                      <div style={{fontSize:10,color:B.muted,textTransform:"uppercase",letterSpacing:"1px",marginBottom:4}}>{s.label}</div>
-                      <div style={{fontFamily:SERIF,fontSize:16,color:B.navy}}>{s.val}</div>
-                    </div>
-                  ))}
-                </div>
-                <div style={{display:"flex",gap:10,marginBottom:14}}>
-                  {/* Market temp badge */}
-                  <div style={{background:tempBg(r.neighborhood.marketTemp),border:`1px solid ${tempColor(r.neighborhood.marketTemp)}44`,borderRadius:6,padding:"10px 14px",flex:"0 0 auto"}}>
-                    <div style={{fontSize:10,color:B.muted,textTransform:"uppercase",letterSpacing:"1px",marginBottom:3}}>Market</div>
-                    <div style={{fontSize:14,fontWeight:600,color:tempColor(r.neighborhood.marketTemp)}}>{r.neighborhood.marketTemp}</div>
-                  </div>
-                  {/* 1-yr change */}
-                  {r.neighborhood.priceChange1yr&&(()=>{
-                    const val = parseFloat(r.neighborhood.priceChange1yr);
-                    const up = val >= 0;
-                    return (
-                      <div style={{background:up?"#EBF5EB":"#FDF2F2",border:`1px solid ${up?"#8FBF8F":"#E8CCCC"}`,borderRadius:6,padding:"10px 14px",flex:"0 0 auto"}}>
-                        <div style={{fontSize:10,color:B.muted,textTransform:"uppercase",letterSpacing:"1px",marginBottom:3}}>12-Mo Price Change</div>
-                        <div style={{fontSize:14,fontWeight:600,color:up?"#2E7D32":"#C62828"}}>{up?"+":""}{val}%</div>
-                      </div>
-                    );
-                  })()}
-                  {/* Inventory */}
-                  <div style={{background:B.cream,border:`1px solid ${B.border}`,borderRadius:6,padding:"10px 14px",flex:1}}>
-                    <div style={{fontSize:10,color:B.muted,textTransform:"uppercase",letterSpacing:"1px",marginBottom:3}}>Inventory</div>
-                    <div style={{fontSize:12,color:B.textSoft,lineHeight:1.4}}>{r.neighborhood.inventory||"—"}</div>
-                  </div>
-                </div>
-                {/* Trend blurb */}
-                {r.neighborhood.trend&&(
-                  <div style={{background:B.cream,border:`1px solid ${B.border}`,borderRadius:6,padding:"12px 14px",marginBottom:14,fontSize:12,color:B.textSoft,lineHeight:1.65}}>
-                    {r.neighborhood.trend}
-                  </div>
-                )}
-              </>
-            )}
-
-            {r.note&&<div style={{fontSize:11,color:B.muted,marginBottom:14,fontStyle:"italic"}}>{r.note}</div>}
-
-            <div style={{display:"flex",gap:8,justifyContent:"space-between",alignItems:"center",marginTop:4}}>
-              <button className="cr-ghost" onClick={()=>{setQResult(null);}}>← Try Another Address</button>
-              <button className="cr-ghost" onClick={()=>{resetQ();setMode(null);}}>Change Type</button>
-            </div>
-
-            <div style={{marginTop:14,fontSize:11,color:B.muted,lineHeight:1.6}}>
-              Valuations sourced from Zillow and Realtor.com public data. AVM estimates reflect automated models and may not account for condition, upgrades, or off-market factors. For a client-ready pricing report, use Full CMA.
-            </div>
-          </div>
-        ) : (
-          /* ── INPUT ── */
-          <div className="cr-fade">
-            <div style={{fontFamily:SERIF,fontSize:22,color:B.navy,marginBottom:6}}>Quick CMA</div>
-            <p style={{fontSize:13,color:B.muted,marginBottom:"1.4rem",lineHeight:1.6}}>
-              Enter any property address. We'll pull the Zillow Zestimate, Realtor.com AVM, property details, and current neighborhood market data — all in one shot.
-            </p>
-            <Field label="Property Address">
-              <div className="mls-row">
-                <input className="cr-input" value={qAddr} onChange={e=>setQAddr(e.target.value)}
-                  placeholder="9517 N Faust Station Dr, Eagle Mountain, UT 84005"
-                  onKeyDown={e=>e.key==="Enter"&&qAddr.trim()&&runQuickAVM()}
-                  style={{borderRadius:"4px 0 0 4px",borderRight:"none",fontSize:13}}/>
-                <button className="cr-gold" onClick={runQuickAVM} disabled={!qAddr.trim()}
-                  style={{borderRadius:"0 4px 4px 0",padding:"9px 22px"}}>
-                  Run Quick CMA →
-                </button>
-              </div>
-            </Field>
-            <InfoBox type="blue" title="What you get">
-              Zillow Zestimate with range · Realtor.com AVM with range · AVM consensus · Property details · Neighborhood median price, $/sqft, days on market, 12-month price trend, and market temperature.
-            </InfoBox>
-            <div style={{display:"flex",justifyContent:"flex-start",marginTop:20}}>
-              <button className="cr-ghost" onClick={()=>setMode(null)}>← Back</button>
-            </div>
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  /* ══════════════════════════════════════════════════
-     AGENT COMPARABLES FLOW
+     FULL CMA
      Steps: 0=MLS lookup → 1=subject → 2=comps → 3=notes → 4=report
   ══════════════════════════════════════════════════ */
   const AG_STEPS = ["MLS Lookup","Subject Property","Comparables","Market Notes","Report"];
   return (
     <div className="cr" style={{maxWidth:740,margin:"0 auto",padding:"1.5rem 1rem",fontFamily:SANS}}>
       <GS/>
-      <Header label="Full CMA" onBack={()=>{resetAg();setMode(null);}}/>
+      <Header/>
       <StepBar steps={AG_STEPS} step={agStep}/>
       <ErrBanner msg={agErr}/>
 
@@ -1683,7 +1409,7 @@ Return ONLY valid JSON (no markdown):
                 <div style={{display:"flex",gap:8}}>
                   <button className="cr-ghost" onClick={()=>{setAgS(3);setAgR(null);}}>Re-run</button>
                   <button className="cr-ghost" onClick={()=>{setAgS(2);}}>Edit Comps</button>
-                  <button className="cr-ghost" onClick={()=>{resetAg();setMode(null);}}>Change Type</button>
+                    <button className="cr-ghost" onClick={()=>{resetAg();}}>Start Over</button>
                 </div>
                 <button className="cr-gold" onClick={()=>download(agSub,agVc,agReport,false)} disabled={dlLoad}>
                   {dlLoad?"Building...":"Download Report →"}

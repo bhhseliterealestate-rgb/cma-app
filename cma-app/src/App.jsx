@@ -1062,76 +1062,42 @@ ${vc.map(c=>{const sp=parseFloat(String(c.salePrice).replace(/[^0-9.]/g,""))||0;
 
 /* ─── Parse MLS comps from uploaded PDF ─────────────────── */
 async function parsePDFComps(base64Data) {
-  const prompt = `This is a UtahRealEstate.com MLS Agent Full Report PDF. It contains multiple property listings. Each listing starts with "MLS#" followed by a number.
+  const prompt = `This is a UtahRealEstate.com MLS Agent Full Report. It contains multiple sold property listings.
 
-Extract EVERY listing. Do not skip any. This PDF format has these exact fields — read them carefully for each listing:
+Each listing begins with "MLS#" followed by a number and has these fields:
+Sold Price, Original List Price, DOM, Sold Date, Address, City/State/Zip, a square footage table with a "Tot" row showing total sqft/beds/baths, Year Built, Acres, Garage (number of stalls), Pool?, Style, Concessions, Sold Terms.
 
-- MLS#: the number after "MLS#" at the top of each listing
-- Sold Price: the dollar amount after "Sold Price:"
-- Original List Price: dollar amount after "Original List Price:"
-- DOM: number after "DOM:"
-- Sold Date: date after "Sold Date:"
-- Address: street address after "Address:"
-- City line: contains city, state, zip e.g. "American Fork, UT 84003"
-- Total Sq Ft: the "Tot" row in the square footage table — use the first number (total sqft)
-- Beds: from the "Tot" row, the Bed Rms column
-- Baths: from the "Tot" row — add Full (F) + Three-Quarter (T) baths, ignore Half (H)
-- Year Built: after "Year Built:"
-- Acres: after "Acres:" — convert to sqft by multiplying by 43560
-- Garage: the number after "Garage:" (number of stalls)
-- Pool?: "Yes" or "No" after "Pool?:"
-- Style: after "Style:"
-- Type: after "Type:"
-- Concessions: dollar amount after "Concessions:"
-- Sold Terms: after "Sold Terms:"
+Extract every listing and return ONLY this JSON (no markdown, no explanation):
+{"comps":[{"mlsNum":"","address":"street only","city":"","state":"UT","zip":"","salePrice":"digits only","listPrice":"digits only","saleDate":"YYYY-MM-DD","beds":"","baths":"full+threequarter as decimal","sqft":"digits only","lotSize":"acres x 43560 rounded","garage":"N-car","pool":false,"daysOnMarket":"","yearBuilt":"","condition":"Average","concessions":"digits only","soldTerms":""}],"count":0}`;
 
-Return ONLY valid JSON with no markdown or explanation:
-{
-  "comps": [
-    {
-      "mlsNum": "MLS number as string",
-      "address": "street address only e.g. 1031 S 950 W",
-      "city": "city name only e.g. American Fork",
-      "state": "UT",
-      "zip": "zip code e.g. 84003",
-      "salePrice": "sold price digits only no commas no dollar sign e.g. 775000",
-      "listPrice": "original list price digits only no commas e.g. 799999",
-      "saleDate": "YYYY-MM-DD",
-      "beds": "total beds as string e.g. 5",
-      "baths": "full + three-quarter baths as decimal e.g. 2 or 3.5",
-      "sqft": "total sqft from Tot row no commas e.g. 3550",
-      "lotSize": "acres converted to sqft rounded to nearest whole number e.g. 9148",
-      "garage": "garage stalls as text e.g. 3-car",
-      "pool": false,
-      "daysOnMarket": "DOM as string e.g. 75",
-      "yearBuilt": "year as string e.g. 2022",
-      "condition": "Average",
-      "style": "e.g. 2-Story",
-      "concessions": "concession amount digits only e.g. 5000",
-      "soldTerms": "e.g. Conventional"
-    }
-  ],
-  "count": total number of listings extracted
-}
+  // Try 1: send as base64 PDF document
+  try {
+    const res = await fetch("/api/claude", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({
+        model:"claude-sonnet-4-20250514", max_tokens:6000,
+        messages:[{role:"user", content:[
+          {type:"document", source:{type:"base64", media_type:"application/pdf", data:base64Data}},
+          {type:"text", text:prompt}
+        ]}]
+      })
+    });
+    const data = await res.json();
 
-IMPORTANT: Extract ALL listings. If this PDF has 5 listings, return 5 comps. If it has 10, return 10. Do not stop early.`;
+    // Surface API errors clearly
+    if (data.error) throw new Error(`API error: ${data.error.message||JSON.stringify(data.error)}`);
 
-  const res = await fetch("/api/claude", {
-    method:"POST", headers:{"Content-Type":"application/json"},
-    body: JSON.stringify({
-      model:"claude-sonnet-4-20250514", max_tokens:6000,
-      messages:[{
-        role:"user",
-        content:[
-          {type:"document",source:{type:"base64",media_type:"application/pdf",data:base64Data}},
-          {type:"text",text:prompt}
-        ]
-      }]
-    })
-  });
-  const data = await res.json();
-  const text = (data.content||[]).filter(b=>b.type==="text").map(b=>b.text).join("");
-  return parseJSON(text)||{comps:[],count:0};
+    const text = (data.content||[]).filter(b=>b.type==="text").map(b=>b.text).join("");
+    if (!text) throw new Error(`Empty response from API. Type: ${data.type}, Stop: ${data.stop_reason}`);
+
+    const result = parseJSON(text);
+    if (result?.comps?.length) return result;
+    throw new Error(`Parsed but found 0 comps. Raw: ${text.slice(0,300)}`);
+
+  } catch(e) {
+    // Re-throw with full detail so the UI can show it
+    throw new Error(e.message);
+  }
 }
 
 /* ─── Main App ───────────────────────────────────────────── */
@@ -1336,7 +1302,7 @@ export default function App() {
                           r.readAsDataURL(file);
                         });
                         const result = await parsePDFComps(b64);
-                        if (!result.comps?.length) throw new Error("No listings found in this PDF. Make sure it's a UtahRealEstate.com MLS report.");
+                        if (!result.comps?.length) throw new Error("No listings extracted. Check the error details above.");
                         const newComps = result.comps.map(c=>({
                           address:[c.address,c.city,c.state,c.zip].filter(Boolean).join(", "),
                           beds:c.beds||"",baths:c.baths||"",sqft:c.sqft||"",

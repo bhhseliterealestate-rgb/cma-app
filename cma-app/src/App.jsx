@@ -1144,7 +1144,7 @@ export default function App() {
   /* Agent Comps: generate report */
   const doAgReport = async () => {
     setAgL(true); setAgErr(null);
-    setAgLM("Running AI market analysis — Galgotha doesn't stand a chance…");
+    setAgLM("");
     try {
       const report = await runNarrative(agSub, agVc, "", agNotes, false);
       setAgR(report); setAgS(4);
@@ -1213,7 +1213,7 @@ export default function App() {
                 Searches public listing data. Works for active, pending, and recently sold listings.
               </div>
 
-              {mlsLd&&<Spinner msg="Fetching listing data — Galgotha won't hold us long."/>}
+              {mlsLd&&<Spinner/>}
 
               {mlsSt==="found"&&(
                 <div className="cr-pulse">

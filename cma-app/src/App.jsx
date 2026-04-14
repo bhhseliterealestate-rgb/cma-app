@@ -842,7 +842,7 @@ Then fetch the matching page.
 Return ONLY valid JSON:
 {"address":"street only","city":"","state":"UT","zip":"","beds":"","baths":"","sqft":"livable sqft number string","yearBuilt":"","lotSize":"sqft convert acres to sqft","garage":"","pool":false,"condition":"Good","zestimate":"number string no commas","listPrice":"active price string or empty","zillowUrl":"url used","found":true or false,"note":"listing status"}`;
 
-  const res = await fetch("https://api.anthropic.com/v1/messages",{
+  const res = await fetch("/api/claude",{
     method:"POST",headers:{"Content-Type":"application/json"},
     body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:2000,
       tools:[{type:"web_search_20250305",name:"web_search"}],
@@ -877,7 +877,7 @@ Return ONLY valid JSON:
 
 Rules: 4-6 comps, size within 40% of ${sqft} sqft, dates between ${yearAgo} and ${today}, anchor pricing context to zestimate of ${zest}`;
 
-  const compsRes = await fetch("https://api.anthropic.com/v1/messages",{
+  const compsRes = await fetch("/api/claude",{
     method:"POST",headers:{"Content-Type":"application/json"},
     body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:4000,
       tools:[{type:"web_search_20250305",name:"web_search"}],
@@ -937,7 +937,7 @@ ${isAiComps?`=== DATA DISCLAIMER ===\nComps sourced from public listing data. Ut
 
 Be specific. Use dollar amounts. Professional but readable.`;
 
-  const res = await fetch("https://api.anthropic.com/v1/messages",{
+  const res = await fetch("/api/claude",{
     method:"POST",headers:{"Content-Type":"application/json"},
     body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:3000,messages:[{role:"user",content:prompt}]})
   });
@@ -951,7 +951,7 @@ async function fetchMLS(mlsNum) {
 Find the exact listing and extract property details.
 Return ONLY valid JSON: {"address":"street only","city":"","state":"UT","zip":"","beds":"","baths":"","sqft":"sqft string","yearBuilt":"","lotSize":"sqft string","garage":"","pool":false,"condition":"Good","listPrice":"price string","found":true or false,"source":"site used","note":""}`;
 
-  const res = await fetch("https://api.anthropic.com/v1/messages",{
+  const res = await fetch("/api/claude",{
     method:"POST",headers:{"Content-Type":"application/json"},
     body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1500,
       tools:[{type:"web_search_20250305",name:"web_search"}],
